@@ -34,6 +34,13 @@ class RemoveStrandCommand(UndoCommand):
 
         # only create a new 5p oligo if there is a 3' connection
         self._new_oligo5p = olg.shallowCopy() if self._old_strand5p else None
+        # preserve the loopout (if any) of the 5' neighbor connecting into
+        # this strand, since disconnecting it clears the unpaired bases
+        if self._old_strand5p is not None:
+            self._old_strand5p_loopout = (self._old_strand5p.loopoutLength(),
+                                          self._old_strand5p._loopout_sequence)
+        else:
+            self._old_strand5p_loopout = None
         if olg.isCircular() or self._old_strand3p is None:
             self._new_oligo3p = olg3p = None
             if self._new_oligo5p:
@@ -126,6 +133,8 @@ class RemoveStrandCommand(UndoCommand):
         # Restore connections to this strand
         if strand5p is not None:
             strand5p.setConnection3p(strand)
+            if self._old_strand5p_loopout[0]:
+                strand5p.setLoopout(*self._old_strand5p_loopout)
 
         if strand3p is not None:
             strand3p.setConnection5p(strand)

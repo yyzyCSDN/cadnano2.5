@@ -47,6 +47,10 @@ from .xovercmds import (
     CreateXoverCommand,
     RemoveXoverCommand
 )
+from .loopoutcmds import (
+    CreateLoopoutCommand,
+    ChangeLoopoutLengthCommand
+)
 
 from cadnano.cntypes import (
     RectT,
@@ -72,7 +76,14 @@ from cadnano.cntypes import (
 inner1d(a, a) is equivalent to np.einsum('ik,ij->i', a, a)
 equivalent to np.sum(a*a, axis=1) but faster
 """
-from numpy.core.umath_tests import inner1d
+try:
+    from numpy.core.umath_tests import inner1d
+except ImportError:  # numpy >= 1.20 removed numpy.core.umath_tests
+    def inner1d(a, b, out=None):
+        a = np.asarray(a)
+        if a.ndim == 1:  # row-vector fast dot product used by makeRotation
+            return np.dot(a, b)
+        return np.einsum('ik,ik->i', a, b, out=out)
 
 DEFAULT_CACHE_SIZE = 20
 
@@ -2557,7 +2568,7 @@ class NucleicAcidPart(Part):
             gen = o.strand5p().generator3pStrand()
 
             for s in gen:
-                a += s.totalLength()
+                a += s.oligoLength()
             # end for
             if o_l != a:
                 total_errors += 1
@@ -3052,6 +3063,111 @@ class NucleicAcidPart(Part):
         if strand5p.connection3p() == strand3p:
             c = RemoveXoverCommand(self, strand5p, strand3p)
             util.doCmd(self, c, use_undostack=use_undostack)
+    # end def
+
+    def createLoopout(self,  strand5p: StrandT, idx5p: int,
+                            strand3p: StrandT, idx3p: int,
+                            length: int,
+                            update_oligo: bool = True,
+                            use_undostack: bool = True) -> bool:
+        """Connect the free 3' end of ``strand5p`` to the free 5' end of
+        ``strand3p`` with a single-stranded loopout of ``length`` unpaired
+        bases. The loopout occupies no virtual helix grid point and does not
+        change either strand's indices, insertions or skips.
+
+        A ``length`` of 0 is a plain crossover and is delegated to
+        :meth:`createXover`; a positive integer creates a loopout.
+
+        Invalid requests (bad length, endpoints that are not actual free
+        bound 3'/5' ends, endpoints already occupied by another connection,
+        or requests that would circularize an oligo) are rejected without
+        changing the design or pushing an undo record.
+
+        Returns:
+            ``True`` if the connection was created, ``False`` if rejected.
+        """
+        # length validation: non-negative plain int (bool is rejected)
+        if not isinstance(length, int) or isinstance(length, bool) or length < 0:
+            return False
+        # length 0 is a crossover by definition
+        if length == 0:
+            if not strand3p.canInstallXoverAt(idx3p, strand5p, idx5p):
+                return False
+            self.createXover(strand5p, idx5p, strand3p, idx3p,
+                             update_oligo=update_oligo,
+                             use_undostack=use_undostack)
+            return True
+        # the endpoints must be the actual free bound 3' and 5' ends
+        if idx5p != strand5p.idx3Prime() or idx3p != strand3p.idx5Prime():
+            return False
+        if strand5p.connection3p() is not None or \
+                strand3p.connection5p() is not None:
+            return False
+        # loopout editing only supports linear oligos: reject circularization
+        if strand5p.oligo().isCircular() or strand3p.oligo().isCircular():
+            return False
+        if strand5p.oligo() == strand3p.oligo():
+            return False
+
+        c = CreateLoopoutCommand(self, strand5p, idx5p,
+                                 strand3p, idx3p, length,
+                                 update_oligo=update_oligo)
+        if use_undostack:
+            self.undoStack().beginMacro("Create Loopout")
+            self.undoStack().push(c)
+            self.undoStack().endMacro()
+        else:
+            c.redo()
+        return True
+    # end def
+
+    def setLoopoutLength(self, strand5p: StrandT,
+                               new_length: int,
+                               update_oligo: bool = True,
+                               use_undostack: bool = True) -> bool:
+        """Set the loopout length of an existing 3' connection on
+        ``strand5p``.
+
+        A length of 0 converts the connection to a plain crossover, a
+        positive integer makes it a loopout (this is the crossover/loopout
+        interconversion). The endpoints occupied by this connection itself
+        do not count as conflicts. Assigned bases of both bound strands are
+        preserved; shortening keeps the loopout 5' prefix and growth pads
+        unknown positions.
+
+        Invalid requests (bad length or no existing 3' connection) are
+        rejected without changing the design or pushing an undo record.
+
+        Returns:
+            ``True`` on success, ``False`` if rejected.
+        """
+        if not isinstance(new_length, int) or isinstance(new_length, bool) \
+                or new_length < 0:
+            return False
+        if strand5p.connection3p() is None:
+            return False
+        if new_length == strand5p.loopoutLength():
+            return True  # no-op: do not create an undo record
+
+        c = ChangeLoopoutLengthCommand(strand5p, new_length,
+                                       update_oligo=update_oligo)
+        util.doCmd(self, c, use_undostack=use_undostack)
+        return True
+    # end def
+
+    def hasLoopouts(self) -> bool:
+        """Return ``True`` if any strand in the part carries a single-stranded
+        loopout. Used to reject legacy file formats which cannot express them.
+        """
+        for id_num in self.getidNums():
+            fwd_ss, rev_ss = self.getStrandSets(id_num)
+            for strand in fwd_ss:
+                if strand.hasLoopout():
+                    return True
+            for strand in rev_ss:
+                if strand.hasLoopout():
+                    return True
+        return False
     # end def
 
     def xoverSnapTo(self, strand: StrandT, idx: int, delta: int) -> int:

@@ -83,7 +83,7 @@ class SplitCommand(UndoCommand):
             # settle the oligo length
             length = 0
             for strand in std3p.generator3pStrand():
-                length += strand.totalLength()
+                length += strand.oligoLength()
             # end for
             olg5p._setLength(olg5p.length() - length, emit_signals=True)
             olg3p._setLength(length, emit_signals=True)

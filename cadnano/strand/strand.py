@@ -84,6 +84,12 @@ class Strand(CNObject):
         self._strand5p = None  # 5' connection to another strand
         self._strand3p = None  # 3' connection to another strand
         self._sequence = None
+        # A 3' connection may carry a single-stranded loopout of unpaired bases
+        # that occupies no virtual helix grid point. Length 0 means a plain
+        # crossover. Only meaningful while ``_strand3p`` is not None.
+        self._loopout_length = 0
+        # Loopout bases stored 5'->3' in oligo traversal order, ' ' is unknown.
+        self._loopout_sequence = None
 
         self.segments = []
         self.abstract_sequence = []
@@ -681,6 +687,106 @@ class Strand(CNObject):
         return tL + self.length()
     # end def
 
+    ### LOOPOUT SUPPORT ###
+    def hasLoopout(self) -> bool:
+        """``True`` if the 3' connection of this strand is a single-stranded
+        loopout (length > 0) rather than a plain crossover.
+        """
+        return self._loopout_length > 0
+    # end def
+
+    def loopoutLength(self) -> int:
+        """Number of unpaired loopout bases at the 3' connection.
+        Returns 0 for a plain crossover or when no 3' connection exists.
+        """
+        return self._loopout_length
+    # end def
+
+    def loopoutSequence(self, for_export: bool = False) -> str:
+        """Return the loopout sequence in 5'->3' traversal order.
+
+        Unknown positions are stored as spaces and exported as ``?``.
+        Returns an empty string when this strand has no loopout.
+        """
+        if self._loopout_length == 0:
+            return ''
+        seq = self._loopout_sequence
+        if seq is None:
+            seq = ''.join([' ' for x in range(self._loopout_length)])
+        return util.markwhite(seq) if for_export else seq
+    # end def
+
+    def setLoopout(self, length: int, sequence: str = None):
+        """Install loopout state on a 3' connection.
+
+        ``length`` 0 (or negative) clears loopout state, making the
+        connection a plain crossover. A positive ``length`` with
+        ``sequence`` of ``None`` initializes all positions as unknown.
+        """
+        if length <= 0:
+            self._loopout_length = 0
+            self._loopout_sequence = None
+        else:
+            self._loopout_length = int(length)
+            if sequence is None:
+                self._loopout_sequence = ''.join([' ' for x in range(length)])
+            else:
+                self._loopout_sequence = sequence
+    # end def
+
+    def resizeLoopout(self, new_length: int):
+        """Change the loopout length preserving assigned bases.
+
+        Shortening keeps the 5' prefix of the sequence; growth pads the new
+        positions as unknown (spaces). A ``new_length`` of 0 removes the
+        loopout, leaving the underlying connection as a crossover.
+        """
+        old_length = self._loopout_length
+        if new_length == old_length:
+            return
+        if new_length <= 0:
+            self._loopout_length = 0
+            self._loopout_sequence = None
+            return
+        old_seq = self._loopout_sequence
+        if old_seq is None:
+            old_seq = ''.join([' ' for x in range(old_length)])
+        if new_length < old_length:
+            self._loopout_sequence = old_seq[:new_length]
+        else:
+            self._loopout_sequence = old_seq + \
+                ''.join([' ' for x in range(new_length - old_length)])
+        self._loopout_length = new_length
+    # end def
+
+    def setLoopoutSequenceFromStream(self, sequence: str) -> str:
+        """Consume ``loopoutLength`` characters from a 5'->3' sequence stream
+        for this strand's loopout, padding unknown positions with spaces when
+        the stream runs out. Returns the unused remainder of the stream.
+        """
+        length = self._loopout_length
+        if length == 0:
+            return sequence
+        if sequence is None:
+            self._loopout_sequence = ''.join([' ' for x in range(length)])
+            return None
+        if len(sequence) < length:
+            used = sequence + ''.join([' ' for x in range(length - len(sequence))])
+            remainder = ''
+        else:
+            used = sequence[:length]
+            remainder = sequence[length:]
+        self._loopout_sequence = used
+        return remainder
+    # end def
+
+    def oligoLength(self) -> int:
+        """Total contribution of this strand to its oligo: bound bases
+        (including insertions/skips) plus any unpaired 3' loopout bases.
+        """
+        return self.totalLength() + self._loopout_length
+    # end def
+
     ### PUBLIC METHODS FOR EDITING THE MODEL ###
     def addMods(self, document: DocT, mod_id: str, idx: int, use_undostack: bool = True):
         """Used to add mods during a merge operation."""
@@ -836,6 +942,10 @@ class Strand(CNObject):
 
     def setConnection3p(self, strand: StrandT):
         self._strand3p = strand
+        if strand is None:
+            # a loopout cannot exist without its 3' connection
+            self._loopout_length = 0
+            self._loopout_sequence = None
     # end def
 
     def setConnection5p(self, strand: StrandT):
@@ -937,6 +1047,10 @@ class Strand(CNObject):
         new_s._oligo = self._oligo
         new_s._strand5p = self._strand5p
         new_s._strand3p = self._strand3p
+        # carry the loopout along with the 3' connection, commands that
+        # disconnect endpoints are responsible for clearing it where needed
+        new_s._loopout_length = self._loopout_length
+        new_s._loopout_sequence = self._loopout_sequence
         # required to shallow copy the dictionary
         new_s._sequence = None  # self._sequence
         return new_s
@@ -948,6 +1062,8 @@ class Strand(CNObject):
         new_s = Strand(strandset, *self.idxs())
         new_s._oligo = oligo
         new_s._sequence = self._sequence
+        new_s._loopout_length = self._loopout_length
+        new_s._loopout_sequence = self._loopout_sequence
         return new_s
     # end def
 # end class

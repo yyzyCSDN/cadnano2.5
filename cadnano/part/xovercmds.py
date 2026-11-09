@@ -135,11 +135,16 @@ class RemoveXoverCommand(UndoCommand):
         self._strand3p_idx = strand3p.idx5Prime()
         n_o3p = self._new_oligo3p = strand3p.oligo().shallowCopy()
 
+        # preserve any single-stranded loopout riding on this connection so
+        # undo can restore both the connection and its unpaired bases
+        self._loopout_length = strand5p.loopoutLength()
+        self._loopout_sequence = strand5p._loopout_sequence
+
         color_list = pathstyles.STAP_COLORS
         n_o3p._setColor(random.choice(color_list))
         n_o3p._setLength(0, emit_signals=True)
         for strand in strand3p.generator3pStrand():
-            n_o3p._incrementLength(strand.totalLength(), emit_signals=True)
+            n_o3p._incrementLength(strand.oligoLength(), emit_signals=True)
         # end def
         n_o3p.setStrand5p(strand3p)
 
@@ -214,6 +219,9 @@ class RemoveXoverCommand(UndoCommand):
         # 3. install the Xover
         strand5p.setConnection3p(strand3p)
         strand3p.setConnection5p(strand5p)
+        # restore the single-stranded loopout, if there was one
+        if self._loopout_length:
+            strand5p.setLoopout(self._loopout_length, self._loopout_sequence)
 
         strand5p.strandConnectionChangedSignal.emit(strand5p)
         strand3p.strandConnectionChangedSignal.emit(strand3p)

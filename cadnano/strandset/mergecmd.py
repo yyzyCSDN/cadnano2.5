@@ -46,6 +46,12 @@ class MergeCommand(UndoCommand):
         new_strand = strand_low.shallowCopy()
         new_strand.setIdxs(new_idxs)
         new_strand.setConnectionHigh(strand_high.connectionHigh())
+        # the 3'-most old strand may carry a loopout on its 3' connection;
+        # transfer both the unpaired length and its sequence to the merge result
+        loopout_owner = strand_high if strand_high.connection3p() is not None \
+            else strand_low
+        new_strand._loopout_length = loopout_owner._loopout_length
+        new_strand._loopout_sequence = loopout_owner._loopout_sequence
 
         self._new_strand = new_strand
         # Update the oligo for things like its 5prime end and isCircular

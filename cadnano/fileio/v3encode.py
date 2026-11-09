@@ -137,7 +137,8 @@ def reEmitPart(part: PartT):
             rev_idxs, rev_colors = rev_ss.dump(xover_list)
     # end for
 
-    for from_id, from_is_fwd, from_idx, to_id, to_is_fwd, to_idx in xover_list:
+    for xover in xover_list:
+        from_id, from_is_fwd, from_idx, to_id, to_is_fwd, to_idx = xover[:6]
         strand5p = from_strand = part.getStrand(from_is_fwd, from_id, from_idx)
         strand3p = to_strand = part.getStrand(to_is_fwd, to_id, to_idx)
         strand5p.strandConnectionChangedSignal.emit(strand5p)
@@ -237,8 +238,8 @@ def encodePartList( part_instance: ObjectInstance,
     group_props['insertions'] = [(remap[x], y, z) for x, y, z in filtered_insertions]
 
     filtered_xover_list = filter(filter_xovers, xover_list)
-    group_props['xovers'] = [(remap[a], b, c, remap[x], y, z)
-                             for a, b, c, x, y, z in filtered_xover_list]
+    group_props['xovers'] = [(remap[a], b, c, remap[x], y, z) + tuple(rest)
+                             for a, b, c, x, y, z, *rest in filtered_xover_list]
 
     instance_props = part_instance.properties()
     group_props['instance_properties'] = instance_props

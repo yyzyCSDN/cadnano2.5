@@ -284,11 +284,15 @@ class Oligo(CNObject):
         temp = self.strand5p()
         if not temp:
             return None
-        if temp.sequence():
-            return ''.join([Strand.sequence(strand)
-                            for strand in self.strand5p().generator3pStrand()])
-        else:
+        if not temp.sequence():
             return None
+        parts = []
+        for strand in temp.generator3pStrand():
+            parts.append(Strand.sequence(strand))
+            # single-stranded loopout bases follow the 3' end of each strand
+            if strand.hasLoopout():
+                parts.append(strand.loopoutSequence())
+        return ''.join(parts)
     # end def
 
     def sequenceExport(self, output: dict) -> dict:
@@ -312,6 +316,10 @@ class Oligo(CNObject):
             raise CircularOligoException("Cannot export circular oligo " + self.getName())
         for strand in strand5p.generator3pStrand():
             seq.append(Strand.sequence(strand, for_export=True))
+            # unpaired loopout bases are exported between connected strands,
+            # unknown loopout positions come out as '?'
+            if strand.hasLoopout():
+                seq.append(strand.loopoutSequence(for_export=True))
             a_seq.append(Strand.abstractSeq(strand))
             if strand.connection3p() is None:  # last strand in the oligo
                 vh_num3p = strand.idNum()
@@ -439,7 +447,7 @@ class Oligo(CNObject):
         i = 0
         for strand in strand5p.generator3pStrand():
             if strand.connection3p():
-                i = i + strand.totalLength()
+                i = i + strand.oligoLength()
                 num_bases_to_xovers.append(i+offset)
         return num_bases_to_xovers
 
@@ -473,13 +481,13 @@ class Oligo(CNObject):
         strand5p = self.strand5p()
         temp_len = 0
         for strand in strand5p.generator3pStrand():
-            if (temp_len + strand.totalLength()) > len_for_pos:
+            if (temp_len + strand.oligoLength()) > len_for_pos:
                 vh = strand.idNum()
                 strandset = strand.strandType()
                 baseidx = strand.idx5Prime() + len_for_pos - temp_len
                 return (vh, strandset, baseidx)
             else:
-                temp_len += strand.totalLength()
+                temp_len += strand.oligoLength()
         return None
     # end def
 
@@ -519,7 +527,7 @@ class Oligo(CNObject):
             return
         length = 0
         for strand in temp.generator3pStrand():
-            length += strand.totalLength()
+            length += strand.oligoLength()
         self._setLength(length, emit_signals)
     # end def
 

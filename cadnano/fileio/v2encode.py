@@ -18,7 +18,21 @@ COL_OFFSET = 0
 # DEFAULT_COLS = 32
 
 
+class LoopoutLegacyExportError(ValueError):
+    """Raised when a design containing single-stranded loopouts is exported to
+    the legacy cadnano2 format, which can only express plain crossovers.
+    """
+    pass
+
+
 def encodeDocument(document: DocT) -> dict:
+    # the legacy v2 file format has no representation for unpaired loopout
+    # bases, refuse rather than silently dropping connections
+    for part in document.getParts():
+        if part.hasLoopouts():
+            raise LoopoutLegacyExportError(
+                "Legacy cadnano2 export cannot represent single-stranded "
+                "loopouts; use the native cadnano 2.5 (v3) format instead.")
 
     grid_type = document.getGridType()
 

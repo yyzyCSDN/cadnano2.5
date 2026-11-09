@@ -19,6 +19,10 @@ class ApplySequenceCommand(UndoCommand):
         oligo_list = [olg]
         for strand in olg.strand5p().generator3pStrand():
             used_seq, n_s = strand.setSequence(n_s)
+            # consume the unpaired loopout bases (they have no complement);
+            # unknown positions are padded inside the strand itself
+            if strand.hasLoopout():
+                n_s = strand.setLoopoutSequenceFromStream(n_s)
             # get the compliment ahead of time
             used_seq = None if used_seq is None else util.comp(used_seq)
             for comp_strand in strand.getComplementStrands():
@@ -41,6 +45,9 @@ class ApplySequenceCommand(UndoCommand):
 
         for strand in olg.strand5p().generator3pStrand():
             used_seq, o_s = strand.setSequence(o_s)
+            # restore unpaired loopout bases from the saved sequence stream
+            if strand.hasLoopout():
+                o_s = strand.setLoopoutSequenceFromStream(o_s)
 
             # get the compliment ahead of time
             used_seq = None if used_seq is None else util.comp(used_seq)

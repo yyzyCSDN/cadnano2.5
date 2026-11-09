@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QGraphicsRectItem,
     QGraphicsSimpleTextItem,
     QGraphicsSceneMouseEvent,
+    QInputDialog,
     QStyleOptionGraphicsItem,
     QWidget
 )
@@ -337,6 +338,8 @@ class XoverItem(QGraphicsPathItem):
         self._strand5p = None
         self._node5 = None
         self._node3 = None
+        # length label shown when the connection is a single-stranded loopout
+        self._loopout_label = None
         self.hide()
 
         # for easier mouseclick
@@ -374,6 +377,9 @@ class XoverItem(QGraphicsPathItem):
             self._node3 = None
             self._node5 = None
         self._strand5p = None
+        if self._loopout_label is not None:
+            scene.removeItem(self._loopout_label)
+            self._loopout_label = None
         scene.removeItem(self._click_area)
         self._click_area = None
         scene.removeItem(self)
@@ -550,6 +556,30 @@ class XoverItem(QGraphicsPathItem):
             group.addToGroup(self)
 
         self._updateColor(strand5p)
+        self._updateLoopoutLabel(strand5p)
+    # end def
+
+    def _updateLoopoutLabel(self, strand5p: StrandT):
+        """Show or refresh the editable loopout length label. Loopouts are
+        drawn with a dashed pen and a length badge to distinguish them from
+        plain crossovers.
+        """
+        if not strand5p.hasLoopout():
+            if self._loopout_label is not None:
+                self._loopout_label.hide()
+            return
+        if self._loopout_label is None:
+            self._loopout_label = QGraphicsSimpleTextItem(self)
+            self._loopout_label.setFont(styles.XOVER_LABEL_FONT)
+            self._loopout_label.setBrush(getSolidBrush())
+            self._loopout_label.setZValue(styles.ZXOVERITEM + 1)
+        label = self._loopout_label
+        label.setText("L%d" % strand5p.loopoutLength())
+        center = self.path().boundingRect().center()
+        br = label.boundingRect()
+        label.setPos(center.x() - br.width() / 2.0,
+                     center.y() - br.height() / 2.0)
+        label.show()
     # end def
 
     def _updateColor(self, strand: StrandT):
@@ -569,6 +599,11 @@ class XoverItem(QGraphicsPathItem):
             pen_width = styles.PATH_STRAND_STROKE_WIDTH
             alpha = 255
         pen = getPenObj(color, pen_width, alpha=alpha, capstyle=Qt.FlatCap)
+        # a dashed stroke distinguishes unpaired loopout connections from
+        # plain crossovers, which keep the historical solid stroke.
+        # getPenObj returns cached shared pens, so set the style explicitly
+        # in both directions to avoid a loopout leaking onto other items.
+        pen.setStyle(Qt.DashLine if strand.hasLoopout() else Qt.SolidLine)
         self.setPen(pen)
     # end def
 
@@ -598,6 +633,29 @@ class XoverItem(QGraphicsPathItem):
                 return selection_group.mousePressEvent(event)
         else:
             event.setAccepted(False)
+    # end def
+
+    def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent):
+        """Edit the loopout length of this connection. A length of 0 turns a
+        loopout into a plain crossover; invalid input is rejected by the model
+        without changing the design or creating an undo record.
+        """
+        strand5p = self._strand5p
+        if strand5p is None or strand5p.connection3p() is None:
+            event.setAccepted(False)
+            return
+        parent_window = None
+        views = self.scene().views()
+        if views:
+            parent_window = views[0].window()
+        value, accepted = QInputDialog.getInt(
+            parent_window,
+            "Edit loopout length",
+            "Unpaired bases (0 = crossover):",
+            strand5p.loopoutLength(), 0, 2147483647, 1)
+        if accepted:
+            self._virtual_helix_item.part().setLoopoutLength(strand5p, value)
+        event.setAccepted(True)
     # end def
 
     def eraseToolMousePress(self):

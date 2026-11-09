@@ -723,6 +723,10 @@ class StrandSet(CNObject):
             s3p = strand.connection3p()
             if s3p is not None:
                 xover = (strand.idNum(), is_fwd, strand.idx3Prime()) + s3p.dump5p()
+                # append the loopout length only for single-stranded loopouts,
+                # plain crossovers keep the legacy 6-tuple representation
+                if strand.hasLoopout():
+                    xover = xover + (strand.loopoutLength(),)
                 xover_list.append(xover)
         return idxs, colors
     # end def

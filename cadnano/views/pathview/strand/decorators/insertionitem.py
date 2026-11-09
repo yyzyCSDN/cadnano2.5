@@ -83,7 +83,7 @@ _BIG_RECT = _DEFAULT_RECT.united(_INSERT_PATH_UP_RECT)
 _BIG_RECT = _BIG_RECT.united(_INSERT_PATH_DOWNRect)
 _B_PEN2 = getPenObj(styles.BLUE_STROKE, 2)
 _OFFSET2 = _BW*0.75
-_FONT = QFont(styles.THE_FONT, styles.THE_FONT_SIZE/2, QFont.Bold)
+_FONT = QFont(styles.THE_FONT, int(styles.THE_FONT_SIZE/2), QFont.Bold)
 _BIG_RECT.adjust(-15, -15, 30, 30)
 # Bases are drawn along and above the insert path.
 # These calculations revolve around fixing the characters at a certain

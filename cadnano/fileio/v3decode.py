@@ -10,6 +10,7 @@ from cadnano.fileio.lattice import (
 )
 from cadnano.part.nucleicacidpart import DEFAULT_RADIUS
 from cadnano.part.refresholigoscmd import RefreshOligosCommand
+from cadnano.part.loopoutcmds import ChangeLoopoutLengthCommand
 from cadnano.proxies.cnenum import (
     GridEnum,
     PointEnum,
@@ -191,13 +192,20 @@ def decodePart( document: DocT,
     # end for
 
     xovers = part_dict['xovers']
-    for from_id, from_is_fwd, from_idx, to_id, to_is_fwd, to_idx in xovers:
+    for xover in xovers:
+        from_id, from_is_fwd, from_idx, to_id, to_is_fwd, to_idx = xover[:6]
+        loopout_length = xover[6] if len(xover) > 6 else 0
         from_strand = part.getStrand(from_is_fwd, from_id, from_idx)
         to_strand = part.getStrand(to_is_fwd, to_id, to_idx)
         part.createXover(from_strand, from_idx,
                          to_strand, to_idx,
                          update_oligo=False,
                          use_undostack=False)
+        # restore the single-stranded loopout without oligo updates,
+        # RefreshOligosCommand below recomputes lengths in one pass
+        if loopout_length:
+            ChangeLoopoutLengthCommand(from_strand, loopout_length,
+                                       update_oligo=False).redo()
     # end for
 
     RefreshOligosCommand(part).redo()
@@ -357,13 +365,18 @@ def importToPart(   part_instance : ObjectInstance,
     # end def
 
     xovers = copy_dict['xovers']
-    for from_i, from_is_fwd, from_idx, to_i, to_is_fwd, to_idx in xovers:
+    for xover in xovers:
+        from_i, from_is_fwd, from_idx, to_i, to_is_fwd, to_idx = xover[:6]
+        loopout_length = xover[6] if len(xover) > 6 else 0
         from_strand = part.getStrand(from_is_fwd, from_i + id_num_offset, from_idx)
         to_strand = part.getStrand(to_is_fwd, to_i + id_num_offset, to_idx)
         part.createXover(from_strand, from_idx,
                          to_strand, to_idx,
                          update_oligo=use_undostack,
                          use_undostack=use_undostack)
+        if loopout_length:
+            ChangeLoopoutLengthCommand(from_strand, loopout_length,
+                                       update_oligo=use_undostack).redo()
     if not use_undostack:
         RefreshOligosCommand(part).redo()
 
